@@ -4,7 +4,9 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(req: NextRequest) {
   try {
-    let { email, password, full_name, phone, birth_date, role, region_id, service_id, pic_ibadah_id } = await req.json()
+    const body = await req.json()
+    const { email, password, full_name, phone, birth_date, role, region_id, service_id } = body
+    let { pic_ibadah_id } = body
 
     if (!email || !password || !full_name) {
       return NextResponse.json({ error: 'Email, password, dan nama wajib diisi' }, { status: 400 })
