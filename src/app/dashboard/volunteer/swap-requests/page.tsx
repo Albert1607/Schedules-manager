@@ -191,7 +191,7 @@ export default function SwapRequestsPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold gradient-text">Tukar Jadwal</h1>
           <p className="text-sm text-muted-foreground mt-1">Request swap atau cari pengganti untuk jadwalmu</p>
@@ -200,7 +200,7 @@ export default function SwapRequestsPage() {
           id="create-swap-btn"
           onClick={() => { setForm({ type: 'swap', schedule_id: '', target_volunteer_id: '', replacement_schedule_id: '', reason: '' }); setError(''); setShowModal(true) }}
           disabled={mySchedules.length === 0}
-          className="btn-primary flex items-center gap-2 text-sm disabled:opacity-50"
+          className="btn-primary flex items-center gap-2 text-sm disabled:opacity-50 w-full sm:w-auto justify-center"
         >
           <Plus className="w-4 h-4" /> Request Swap
         </button>

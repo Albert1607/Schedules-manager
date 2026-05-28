@@ -114,12 +114,12 @@ export default function SlotsPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold gradient-text">Template Slot Pelayanan</h1>
           <p className="text-sm text-muted-foreground mt-1">Atur peran volunteer yang dibutuhkan beserta spesifikasi minimalnya</p>
         </div>
-        <button id="create-slot-btn" onClick={openCreate} disabled={!serviceId} className="btn-primary flex items-center gap-2 text-sm disabled:opacity-50">
+        <button id="create-slot-btn" onClick={openCreate} disabled={!serviceId} className="btn-primary flex items-center gap-2 text-sm disabled:opacity-50 w-full sm:w-auto justify-center">
           <Plus className="w-4 h-4" /> Tambah Slot
         </button>
       </div>

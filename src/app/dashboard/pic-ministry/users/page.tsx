@@ -141,12 +141,12 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold gradient-text">Kelola Pengguna</h1>
           <p className="text-sm text-muted-foreground mt-1">Buat dan kelola akun volunteer & PIC</p>
         </div>
-        <button id="create-user-btn" onClick={openCreate} className="btn-primary flex items-center gap-2 text-sm">
+        <button id="create-user-btn" onClick={openCreate} className="btn-primary flex items-center gap-2 text-sm w-full sm:w-auto justify-center">
           <Plus className="w-4 h-4" />
           Tambah User
         </button>
