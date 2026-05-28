@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { triggerSwapApprovalEmail } from '@/app/actions/email'
+import { triggerSwapApprovalEmail, triggerSwapRecapEmailToMinistry } from '@/app/actions/email'
 import { ArrowLeftRight, CheckCircle, XCircle, Loader2, Clock, AlertTriangle } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { id } from 'date-fns/locale'
@@ -45,54 +45,83 @@ export default function SwapApprovalsPage() {
 
   async function processRequest(requestId: string, status: 'approved' | 'rejected', picNote: string) {
     setProcessing(requestId)
-    const { data: req } = await supabase.from('swap_requests').select('*').eq('id', requestId).single()
+
+    // Fetch full request details first using supabase client
+    const { data: req } = await supabase.from('swap_requests').select(`
+      *,
+      requester:profiles!swap_requests_requester_id_fkey(id, full_name, email),
+      target_volunteer:profiles!swap_requests_target_volunteer_id_fkey(id, full_name, email),
+      schedule:schedules!swap_requests_schedule_id_fkey(
+        scheduled_date, service_slot_templates(slot_name),
+        profiles!schedules_volunteer_id_fkey(full_name),
+        services(name)
+      )
+    `).eq('id', requestId).single()
+
+    if (!req) {
+      setProcessing(null)
+      return
+    }
+
+    const nextStatus = status === 'approved' ? (req.target_volunteer_id ? 'pending_volunteer' : 'approved') : 'rejected'
 
     const { error } = await supabase.from('swap_requests').update({
-      status: status === 'approved' ? (req?.target_volunteer_id ? 'pending_volunteer' : 'approved') : 'rejected',
+      status: nextStatus,
       pic_note: picNote || null,
     }).eq('id', requestId)
 
     if (!error) {
-      // If approved and no target, mark as fully approved
-      if (status === 'approved' && req) {
-        if (!req.target_volunteer_id) {
-          // Open replacement — mark schedule as swapped
-          await supabase.from('schedules').update({ status: 'swapped' }).eq('id', req.schedule_id)
-        }
+      // If approved and no target, mark schedule as swapped (open replacement)
+      if (status === 'approved' && !req.target_volunteer_id) {
+        await supabase.from('schedules').update({ status: 'swapped' }).eq('id', req.schedule_id)
+      }
 
-        // Send notifications
-        const notifTargets = [req.requester_id]
-        if (req.target_volunteer_id) notifTargets.push(req.target_volunteer_id)
+      // Send notifications to requester and target (if target exists)
+      const notifTargets = [req.requester_id]
+      if (req.target_volunteer_id) notifTargets.push(req.target_volunteer_id)
 
-        const notifInserts = notifTargets.map(uid => ({
-          user_id: uid,
-          title: status === 'approved' ? '✅ Permintaan Swap Disetujui' : '❌ Permintaan Swap Ditolak',
-          body: status === 'approved' ? 'Permintaan tukar jadwal Anda telah disetujui oleh PIC.' : `Permintaan tukar jadwal Anda ditolak. ${picNote || ''}`,
-          type: 'swap',
+      const notifInserts = notifTargets.map(uid => ({
+        user_id: uid,
+        title: status === 'approved' ? '✅ Permintaan Swap Disetujui' : '❌ Permintaan Swap Ditolak',
+        body: status === 'approved' 
+          ? (req.target_volunteer_id ? 'Permintaan swap Anda telah disetujui oleh PIC Ibadah dan sedang menunggu konfirmasi target.' : 'Permintaan swap Anda telah disetujui oleh PIC Ibadah.')
+          : `Permintaan swap Anda ditolak oleh PIC Ibadah. ${picNote || ''}`,
+        type: 'swap',
+        ref_id: requestId,
+      }))
+      await supabase.from('notifications').insert(notifInserts)
+
+      // Notify PIC Ministry about the update (in-app notification)
+      const { data: ministers } = await supabase.from('profiles').select('id').eq('role', 'pic_ministry')
+      if (ministers && ministers.length > 0) {
+        await supabase.from('notifications').insert(ministers.map((m: any) => ({
+          user_id: m.id,
+          title: `Update Swap — ${status === 'approved' ? 'Disetujui' : 'Ditolak'}`,
+          body: `Permintaan swap telah ${status === 'approved' ? 'disetujui' : 'ditolak'} oleh PIC Ibadah.`,
+          type: 'swap_info',
           ref_id: requestId,
-        }))
-        await supabase.from('notifications').insert(notifInserts)
+        })))
+      }
 
-        // Notify PIC Ministry about the update
-        const { data: ministers } = await supabase.from('profiles').select('id').eq('role', 'pic_ministry')
-        if (ministers && ministers.length > 0) {
-          await supabase.from('notifications').insert(ministers.map((m: any) => ({
-            user_id: m.id,
-            title: `Update Swap — ${status === 'approved' ? 'Disetujui' : 'Ditolak'}`,
-            body: `Permintaan swap telah ${status === 'approved' ? 'disetujui' : 'ditolak'} oleh PIC Ibadah.`,
-            type: 'swap_info',
-            ref_id: requestId,
-          })))
-        }
+      // Send Emails to involved parties
+      const serviceName = req.schedule?.services?.name || 'Ibadah'
+      if (req.requester?.email) {
+        await triggerSwapApprovalEmail(req.requester.email, req.requester.full_name, status === 'approved' ? 'approved' : 'rejected', req.requester.full_name, serviceName)
+      }
+      if (req.target_volunteer?.email) {
+        await triggerSwapApprovalEmail(req.target_volunteer.email, req.target_volunteer.full_name, status === 'approved' ? 'approved' : 'rejected', req.requester.full_name, serviceName)
+      }
 
-        // Send Emails
-        const serviceName = req.schedule?.services?.name || 'Ibadah'
-        if (req.requester?.email) {
-          await triggerSwapApprovalEmail(req.requester.email, req.requester.full_name, status === 'approved' ? 'approved' : 'rejected', req.requester.full_name, serviceName)
-        }
-        if (req.target_volunteer?.email) {
-          await triggerSwapApprovalEmail(req.target_volunteer.email, req.target_volunteer.full_name, status === 'approved' ? 'approved' : 'rejected', req.requester.full_name, serviceName)
-        }
+      // If rejected by PIC, or approved with no target (final outcomes), send recap email to PIC Ministry
+      if (status === 'rejected' || (status === 'approved' && !req.target_volunteer_id)) {
+        await triggerSwapRecapEmailToMinistry(
+          req.requester.full_name,
+          req.target_volunteer?.full_name || 'Open Replacement',
+          serviceName,
+          req.schedule?.scheduled_date || '—',
+          req.type,
+          status === 'approved'
+        ).catch(err => console.error('Recap email error:', err))
       }
     }
 

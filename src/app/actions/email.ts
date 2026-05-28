@@ -1,12 +1,25 @@
 'use server'
 
-import { sendScheduleNotificationEmail, sendSwapRequestEmail, sendSwapApprovalEmail, sendBirthdayEmail, sendVolunteerResponseEmail } from '@/lib/email'
+import { 
+  sendScheduleNotificationEmail, 
+  sendSwapRequestEmail, 
+  sendSwapApprovalEmail, 
+  sendBirthdayEmail, 
+  sendVolunteerResponseEmail,
+  sendSwapRecapEmailToMinistry,
+  ScheduleItem
+} from '@/lib/email'
+import { createAdminClient } from '@/lib/supabase/server'
 
 // Server Action to trigger schedule emails
-export async function triggerScheduleEmails(payloads: { email: string; name: string; serviceName: string; date: string; slotName: string }[]) {
+export async function triggerScheduleEmails(payloads: {
+  email: string
+  name: string
+  schedules: ScheduleItem[]
+}[]) {
   // We can run these in parallel
   const promises = payloads.map(p => 
-    sendScheduleNotificationEmail(p.email, p.name, p.serviceName, p.date, p.slotName)
+    sendScheduleNotificationEmail(p.email, p.name, p.schedules)
   )
   await Promise.allSettled(promises)
   return { success: true }
@@ -29,4 +42,38 @@ export async function triggerVolunteerResponseEmail(email: string, name: string,
   await sendVolunteerResponseEmail(email, name, isAccepted, partnerName, serviceName)
   return { success: true }
 }
+
+// Server Action to send swap recap emails to all PIC Ministry users
+export async function triggerSwapRecapEmailToMinistry(
+  requesterName: string,
+  targetName: string,
+  serviceName: string,
+  date: string,
+  type: 'swap' | 'replacement',
+  isAccepted: boolean
+) {
+  const adminClient = await createAdminClient()
+  const { data: ministers } = await adminClient
+    .from('profiles')
+    .select('email, full_name')
+    .eq('role', 'pic_ministry')
+
+  if (ministers && ministers.length > 0) {
+    const promises = ministers.map((m: any) =>
+      sendSwapRecapEmailToMinistry(
+        m.email,
+        m.full_name,
+        requesterName,
+        targetName,
+        serviceName,
+        date,
+        type,
+        isAccepted
+      )
+    )
+    await Promise.allSettled(promises)
+  }
+  return { success: true }
+}
+
 

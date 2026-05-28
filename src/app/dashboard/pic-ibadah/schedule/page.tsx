@@ -40,7 +40,7 @@ export default function SchedulePage() {
     if (!svcId) { setLoading(false); return }
 
     const [{ data: svc }, { data: sch }, { data: sl }, { data: vol }, { data: vs }] = await Promise.all([
-      supabase.from('services').select('*').eq('id', svcId).single(),
+      supabase.from('services').select('*, regions(name)').eq('id', svcId).single(),
       supabase.from('schedules').select(`
         *, 
         profiles!schedules_volunteer_id_fkey(id, full_name),
@@ -93,29 +93,38 @@ export default function SchedulePage() {
 
       // Insert in batches
       const batchSize = 50
-      const emailPayloads: any[] = []
       for (let i = 0; i < entries.length; i += batchSize) {
         const batch = entries.slice(i, i + batchSize).map(e => ({ ...e, created_by: currentUserId }))
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { error } = await (supabase as any).from('schedules').insert(batch)
         if (error) throw error
-
-        // Prepare email payloads
-        batch.forEach(e => {
-          const vol = volunteers.find(v => v.id === e.volunteer_id)
-          const slot = slots.find(s => s.id === e.slot_template_id)
-          if (vol && vol.email && slot) {
-            emailPayloads.push({
-              email: vol.email,
-              name: vol.full_name,
-              serviceName: service.name,
-              date: format(parseISO(e.scheduled_date as string), 'd MMMM yyyy', { locale: id }),
-              slotName: slot.slot_name
-            })
-          }
-        })
       }
 
+      // Prepare consolidated email payloads grouped by volunteer
+      const volunteerSchedulesMap = new Map<string, { email: string; name: string; schedules: any[] }>()
+
+      entries.forEach(e => {
+        const vol = volunteers.find(v => v.id === e.volunteer_id)
+        const slot = slots.find(s => s.id === e.slot_template_id)
+        if (vol && vol.email && slot) {
+          if (!volunteerSchedulesMap.has(vol.id)) {
+            volunteerSchedulesMap.set(vol.id, {
+              email: vol.email,
+              name: vol.full_name,
+              schedules: []
+            })
+          }
+          volunteerSchedulesMap.get(vol.id)!.schedules.push({
+            date: format(parseISO(e.scheduled_date as string), 'd MMMM yyyy', { locale: id }),
+            time: service.time_of_day ? service.time_of_day.slice(0, 5) : '—',
+            serviceName: service.name,
+            slotName: slot.slot_name,
+            location: (service as any).regions?.name || '—'
+          })
+        }
+      })
+
+      const emailPayloads = Array.from(volunteerSchedulesMap.values())
       if (emailPayloads.length > 0) {
         await triggerScheduleEmails(emailPayloads)
       }

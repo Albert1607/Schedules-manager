@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { sendBirthdayEmail } from '@/lib/email'
+import { sendBirthdayEmail, sendBirthdayRecapEmailToMinistry } from '@/lib/email'
 
 export const dynamic = 'force-dynamic' // ensure it's not cached
 
@@ -61,6 +61,24 @@ export async function GET(request: Request) {
       }
       return Promise.resolve(null)
     })
+
+    // Get all PIC Ministry profiles to send a consolidated birthday list
+    const { data: ministers } = await supabase
+      .from('profiles')
+      .select('email, full_name')
+      .eq('role', 'pic_ministry')
+
+    if (ministers && ministers.length > 0) {
+      const birthdayData = birthdayProfiles.map((p: any) => ({
+        full_name: p.full_name,
+        email: p.email
+      }))
+      ministers.forEach((m: any) => {
+        emailPromises.push(
+          sendBirthdayRecapEmailToMinistry(m.email, m.full_name, birthdayData)
+        )
+      })
+    }
 
     await Promise.allSettled(emailPromises)
 

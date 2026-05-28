@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient, createAdminClient } from '@/lib/supabase/server'
-import { triggerVolunteerResponseEmail } from '@/app/actions/email'
+import { triggerVolunteerResponseEmail, triggerSwapRecapEmailToMinistry } from '@/app/actions/email'
 
 export async function respondToSwapRequest(requestId: string, accept: boolean) {
   try {
@@ -113,6 +113,15 @@ export async function respondToSwapRequest(requestId: string, accept: boolean) {
           req.target_volunteer.full_name,
           serviceName
         ).catch(err => console.error('Email error:', err))
+
+        triggerSwapRecapEmailToMinistry(
+          req.requester.full_name,
+          req.target_volunteer.full_name,
+          serviceName,
+          req.schedule?.scheduled_date || '—',
+          req.type,
+          true
+        ).catch(err => console.error('Recap email error:', err))
       }
 
     } else {
@@ -160,6 +169,15 @@ export async function respondToSwapRequest(requestId: string, accept: boolean) {
           req.target_volunteer.full_name,
           serviceName
         ).catch(err => console.error('Email error:', err))
+
+        triggerSwapRecapEmailToMinistry(
+          req.requester.full_name,
+          req.target_volunteer.full_name,
+          serviceName,
+          req.schedule?.scheduled_date || '—',
+          req.type,
+          false
+        ).catch(err => console.error('Recap email error:', err))
       }
     }
 

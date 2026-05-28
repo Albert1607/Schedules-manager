@@ -34,18 +34,46 @@ export async function sendEmail({
 
 // Pre-defined templates
 
-export async function sendScheduleNotificationEmail(to: string, volunteerName: string, serviceName: string, date: string, slotName: string) {
+export interface ScheduleItem {
+  date: string
+  time: string
+  serviceName: string
+  slotName: string
+  location: string
+}
+
+export async function sendScheduleNotificationEmail(to: string, volunteerName: string, schedules: ScheduleItem[]) {
+  const listHtml = schedules.map(s => `
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 8px;">${s.date}</td>
+      <td style="border: 1px solid #ddd; padding: 8px;">${s.time}</td>
+      <td style="border: 1px solid #ddd; padding: 8px;">${s.serviceName}</td>
+      <td style="border: 1px solid #ddd; padding: 8px;">${s.slotName}</td>
+      <td style="border: 1px solid #ddd; padding: 8px;">${s.location}</td>
+    </tr>
+  `).join('')
+
   return sendEmail({
     to,
-    subject: `Jadwal Pelayanan Baru: ${serviceName}`,
+    subject: `Jadwal Pelayanan Baru`,
     html: `
       <h2>Halo, ${volunteerName}!</h2>
-      <p>Kamu telah dijadwalkan untuk pelayanan pada ibadah <strong>${serviceName}</strong>.</p>
-      <ul>
-        <li><strong>Tanggal:</strong> ${date}</li>
-        <li><strong>Posisi/Tugas:</strong> ${slotName}</li>
-      </ul>
-      <p>Mohon persiapkan diri dengan baik. Jika berhalangan, harap segera request tukar jadwal melalui dashboard.</p>
+      <p>Kamu telah dijadwalkan untuk pelayanan periode ini. Berikut rincian jadwalmu:</p>
+      <table style="border-collapse: collapse; width: 100%; border: 1px solid #ddd; font-family: sans-serif;">
+        <thead>
+          <tr style="background-color: #f2f2f2; text-align: left;">
+            <th style="border: 1px solid #ddd; padding: 8px;">Tanggal</th>
+            <th style="border: 1px solid #ddd; padding: 8px;">Waktu</th>
+            <th style="border: 1px solid #ddd; padding: 8px;">Ibadah</th>
+            <th style="border: 1px solid #ddd; padding: 8px;">Posisi/Tugas</th>
+            <th style="border: 1px solid #ddd; padding: 8px;">Tempat</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${listHtml}
+        </tbody>
+      </table>
+      <p style="margin-top: 15px;">Mohon persiapkan diri dengan baik. Jika berhalangan, harap segera request tukar jadwal melalui dashboard.</p>
       <br />
       <p>Terima kasih,</p>
       <p>Tim Ministry</p>
@@ -121,4 +149,64 @@ export async function sendVolunteerResponseEmail(to: string, name: string, isAcc
     `
   })
 }
+
+export async function sendSwapRecapEmailToMinistry(
+  to: string,
+  picMinistryName: string,
+  requesterName: string,
+  targetName: string,
+  serviceName: string,
+  date: string,
+  type: 'swap' | 'replacement',
+  isAccepted: boolean
+) {
+  const outcome = isAccepted ? 'DISETUJUI & SELESAI' : 'DITOLAK & DIBATALKAN'
+  const detail = isAccepted
+    ? `Jadwal pelayanan untuk ibadah ${serviceName} pada tanggal ${date} telah resmi ditukar/diperbarui.`
+    : `Permintaan swap dibatalkan/ditolak.`
+
+  return sendEmail({
+    to,
+    subject: `[RECAP] Swap Jadwal: ${outcome}`,
+    html: `
+      <h2>Halo, ${picMinistryName}!</h2>
+      <p>Berikut adalah laporan akhir (recap) pertukaran jadwal pelayanan:</p>
+      <ul>
+        <li><strong>Tipe:</strong> ${type === 'swap' ? 'Tukar Jadwal' : 'Cari Pengganti'}</li>
+        <li><strong>Ibadah:</strong> ${serviceName}</li>
+        <li><strong>Tanggal:</strong> ${date}</li>
+        <li><strong>Pengaju:</strong> ${requesterName}</li>
+        <li><strong>Target:</strong> ${targetName}</li>
+        <li><strong>Status Akhir:</strong> <strong>${outcome}</strong></li>
+      </ul>
+      <p>${detail}</p>
+      <br />
+      <p>Terima kasih,</p>
+      <p>System Manager</p>
+    `
+  })
+}
+
+export async function sendBirthdayRecapEmailToMinistry(
+  to: string,
+  picMinistryName: string,
+  birthdayList: { full_name: string; email: string }[]
+) {
+  const listHtml = birthdayList.map(p => `<li><strong>${p.full_name}</strong> (${p.email})</li>`).join('')
+  return sendEmail({
+    to,
+    subject: `[RECAP] Ulang Tahun Hari Ini 🎉`,
+    html: `
+      <h2>Halo, ${picMinistryName}!</h2>
+      <p>Berikut adalah daftar volunteer yang berulang tahun hari ini:</p>
+      <ul>
+        ${listHtml}
+      </ul>
+      <br />
+      <p>Mari berikan ucapan selamat kepada mereka!</p>
+      <p>Tim Ministry</p>
+    `
+  })
+}
+
 
