@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { triggerSwapRequestEmail } from '@/app/actions/email'
+import { respondToSwapRequest } from '@/app/actions/swap'
 import { ArrowLeftRight, Plus, Loader2, X, Clock, CheckCircle, XCircle } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { id } from 'date-fns/locale'
@@ -10,6 +11,9 @@ import { id } from 'date-fns/locale'
 export default function SwapRequestsPage() {
   const supabase = createClient()
   const [myRequests, setMyRequests] = useState<any[]>([])
+  const [incomingRequests, setIncomingRequests] = useState<any[]>([])
+  const [activeTab, setActiveTab] = useState<'outgoing' | 'incoming'>('outgoing')
+  const [actioningId, setActioningId] = useState<string | null>(null)
   const [mySchedules, setMySchedules] = useState<any[]>([])
   const [otherVolunteers, setOtherVolunteers] = useState<any[]>([])
   const [volSchedules, setVolSchedules] = useState<any[]>([])
@@ -41,12 +45,18 @@ export default function SwapRequestsPage() {
     setPicIbadahId((profile as any)?.pic_ibadah_id)
     setCurrentUserName((profile as any)?.full_name)
 
-    const [{ data: myReqs }, { data: mySchs }, { data: others }] = await Promise.all([
+    const [{ data: myReqs }, { data: incomingReqs }, { data: mySchs }, { data: others }] = await Promise.all([
       supabase.from('swap_requests').select(`
         *,
         schedule:schedules!swap_requests_schedule_id_fkey(scheduled_date, service_slot_templates(slot_name), services(name)),
         target_volunteer:profiles!swap_requests_target_volunteer_id_fkey(full_name)
       `).eq('requester_id', user.id).order('created_at', { ascending: false }),
+      supabase.from('swap_requests').select(`
+        *,
+        requester:profiles!swap_requests_requester_id_fkey(full_name),
+        schedule:schedules!swap_requests_schedule_id_fkey(scheduled_date, service_slot_templates(slot_name), services(name)),
+        replacement_schedule:schedules!swap_requests_replacement_schedule_id_fkey(scheduled_date, service_slot_templates(slot_name))
+      `).eq('target_volunteer_id', user.id).order('created_at', { ascending: false }),
       supabase.from('schedules').select(`
         *, services(name), service_slot_templates(slot_name)
       `).eq('volunteer_id', user.id)
@@ -56,11 +66,26 @@ export default function SwapRequestsPage() {
     ])
 
     setMyRequests(myReqs || [])
+    setIncomingRequests(incomingReqs || [])
     setMySchedules(mySchs || [])
     setOtherVolunteers(others || [])
     setAvailableTargets(others || [])
     setLoading(false)
   }, [])
+
+  async function handleResponse(requestId: string, accept: boolean) {
+    if (!window.confirm(`Apakah Anda yakin ingin ${accept ? 'menyetujui' : 'menolak'} permintaan swap ini?`)) {
+      return
+    }
+    setActioningId(requestId + (accept ? '_accept' : '_reject'))
+    const res = await respondToSwapRequest(requestId, accept)
+    if (!res.success) {
+      alert(res.error)
+    } else {
+      await loadData()
+    }
+    setActioningId(null)
+  }
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -187,21 +212,42 @@ export default function SwapRequestsPage() {
         </div>
       )}
 
+      {/* Tabs */}
+      <div className="flex border-b border-border">
+        <button
+          onClick={() => setActiveTab('outgoing')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-all ${activeTab === 'outgoing' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+        >
+          Permintaan Keluar
+        </button>
+        <button
+          onClick={() => setActiveTab('incoming')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-all relative ${activeTab === 'incoming' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+        >
+          Permintaan Masuk
+          {incomingRequests.filter(r => r.status === 'pending_volunteer').length > 0 && (
+            <span className="ml-2 px-2 py-0.5 text-[10px] font-bold bg-primary text-primary-foreground rounded-full">
+              {incomingRequests.filter(r => r.status === 'pending_volunteer').length}
+            </span>
+          )}
+        </button>
+      </div>
+
       {loading ? (
         <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-      ) : (
+      ) : activeTab === 'outgoing' ? (
         <div className="space-y-3">
-          <h2 className="font-semibold text-sm">Riwayat Permintaan Swap</h2>
+          <h2 className="font-semibold text-sm text-muted-foreground">Riwayat Permintaan Keluar (Saya yang Mengajukan)</h2>
           {myRequests.length === 0 ? (
             <div className="glass-card py-12 text-center">
               <ArrowLeftRight className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">Belum ada permintaan swap</p>
+              <p className="text-sm text-muted-foreground">Belum ada permintaan swap keluar</p>
             </div>
           ) : (
             myRequests.map(req => {
               const { cls, label, icon: Icon } = statusBadge(req.status)
               return (
-                <div key={req.id} className="glass-card p-5">
+                <div key={req.id} className="glass-card p-5 animate-fade-in">
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <p className="font-semibold text-sm">{req.schedule?.services?.name || '—'}</p>
@@ -237,6 +283,93 @@ export default function SwapRequestsPage() {
                   <p className="text-[10px] text-muted-foreground/60 mt-3">
                     {format(parseISO(req.created_at), 'd MMM yyyy HH:mm', { locale: id })}
                   </p>
+                </div>
+              )
+            })
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <h2 className="font-semibold text-sm text-muted-foreground">Permintaan Masuk (Butuh Konfirmasi Saya)</h2>
+          {incomingRequests.length === 0 ? (
+            <div className="glass-card py-12 text-center">
+              <ArrowLeftRight className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">Belum ada permintaan swap masuk</p>
+            </div>
+          ) : (
+            incomingRequests.map(req => {
+              const { cls, label, icon: Icon } = statusBadge(req.status)
+              const isActionable = req.status === 'pending_volunteer'
+              return (
+                <div key={req.id} className="glass-card p-5 animate-fade-in">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <p className="font-semibold text-sm">{req.schedule?.services?.name || '—'}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {req.schedule?.scheduled_date ? format(parseISO(req.schedule.scheduled_date), 'd MMMM yyyy', { locale: id }) : '—'} ·
+                        {' '}{req.schedule?.service_slot_templates?.slot_name || '—'}
+                      </p>
+                    </div>
+                    <span className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-full ${cls}`}>
+                      <Icon className="w-3 h-3" /> {label}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                    <div className="p-3 bg-secondary/40 rounded-lg">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Pengirim (Meminta Swap)</p>
+                      <p className="text-sm font-medium">{req.requester?.full_name || '—'}</p>
+                    </div>
+                    <div className="p-3 bg-secondary/40 rounded-lg">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Jadwal Anda yang Diambil</p>
+                      {req.type === 'swap' && req.replacement_schedule ? (
+                        <>
+                          <p className="text-sm font-medium">
+                            {format(parseISO(req.replacement_schedule.scheduled_date), 'd MMM yyyy', { locale: id })}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{req.replacement_schedule.service_slot_templates?.slot_name || '—'}</p>
+                        </>
+                      ) : (
+                        <p className="text-sm text-amber-400">Hanya menggantikan (Replacement)</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {req.reason && (
+                    <p className="text-xs text-muted-foreground p-2 bg-secondary/40 rounded-lg mb-3">
+                      <span className="text-foreground">Alasan: </span>{req.reason}
+                    </p>
+                  )}
+                  {req.pic_note && (
+                    <p className="text-xs text-muted-foreground p-2 bg-secondary/40 rounded-lg mb-3">
+                      <span className="text-foreground">Catatan PIC: </span>{req.pic_note}
+                    </p>
+                  )}
+
+                  <div className="flex items-center justify-between text-xs text-muted-foreground mt-4">
+                    <span>
+                      {format(parseISO(req.created_at), 'd MMM yyyy HH:mm', { locale: id })}
+                    </span>
+
+                    {isActionable && (
+                      <div className="flex gap-2">
+                        <button
+                          disabled={actioningId !== null}
+                          onClick={() => handleResponse(req.id, false)}
+                          className="flex items-center gap-1 px-3 py-1.5 border border-destructive/30 text-destructive hover:bg-destructive/10 rounded-lg transition-colors text-xs disabled:opacity-50"
+                        >
+                          {actioningId === req.id + '_reject' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />} Tolak
+                        </button>
+                        <button
+                          disabled={actioningId !== null}
+                          onClick={() => handleResponse(req.id, true)}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded-lg transition-colors text-xs disabled:opacity-50"
+                        >
+                          {actioningId === req.id + '_accept' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />} Terima
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )
             })

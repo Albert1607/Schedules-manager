@@ -1,6 +1,6 @@
 'use server'
 
-import { sendScheduleNotificationEmail, sendSwapRequestEmail, sendSwapApprovalEmail, sendBirthdayEmail } from '@/lib/email'
+import { sendScheduleNotificationEmail, sendSwapRequestEmail, sendSwapApprovalEmail, sendBirthdayEmail, sendVolunteerResponseEmail } from '@/lib/email'
 
 // Server Action to trigger schedule emails
 export async function triggerScheduleEmails(payloads: { email: string; name: string; serviceName: string; date: string; slotName: string }[]) {
@@ -23,3 +23,10 @@ export async function triggerSwapApprovalEmail(email: string, name: string, stat
   await sendSwapApprovalEmail(email, name, status, requesterName, serviceName)
   return { success: true }
 }
+
+// Server Action to trigger volunteer response email
+export async function triggerVolunteerResponseEmail(email: string, name: string, isAccepted: boolean, partnerName: string, serviceName: string) {
+  await sendVolunteerResponseEmail(email, name, isAccepted, partnerName, serviceName)
+  return { success: true }
+}
+

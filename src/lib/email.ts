@@ -102,3 +102,23 @@ export async function sendBirthdayEmail(to: string, name: string) {
     `
   })
 }
+
+export async function sendVolunteerResponseEmail(to: string, name: string, isAccepted: boolean, partnerName: string, serviceName: string) {
+  const statusStr = isAccepted ? 'DISETUJUI' : 'DITOLAK'
+  const detailStr = isAccepted 
+    ? 'Jadwal pelayanan kalian telah otomatis diperbarui di dashboard.' 
+    : 'Jadwal pelayanan tetap seperti semula.'
+  return sendEmail({
+    to,
+    subject: `Konfirmasi Tukar Jadwal: ${statusStr}`,
+    html: `
+      <h2>Halo, ${name}!</h2>
+      <p>Partner pelayananmu, <strong>${partnerName}</strong>, telah <strong>${statusStr}</strong> permintaan tukar jadwal untuk ibadah <strong>${serviceName}</strong>.</p>
+      <p>${detailStr}</p>
+      <br />
+      <p>Terima kasih,</p>
+      <p>Tim Ministry</p>
+    `
+  })
+}
+
